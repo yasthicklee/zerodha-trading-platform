@@ -1,0 +1,179 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // For migrations
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  isActive     Boolean  @default(true) @map("is_active")
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  zerodhaProfile ZerodhaProfile?
+  baskets        TradingBasket[]
+  userStrategies  UserStrategy[]
+
+  @@map("users")
+}
+
+model ZerodhaProfile {
+  id                   String   @id @default(cuid())
+  userId               String   @unique @map("user_id")
+  apiKey               String   @map("api_key")
+  apiSecretEncrypted   String   @map("api_secret_encrypted")
+  accessTokenEncrypted String?  @map("access_token_encrypted")
+  enctoken             String?
+  publicToken          String?  @map("public_token")
+  redirectUri          String?  @map("redirect_uri")
+  
+  // User Info
+  zerodhaUserId String? @map("zerodha_user_id")
+  userName      String? @map("user_name")
+  email         String?
+  userType      String? @map("user_type")
+  broker        String?
+  
+  // Status
+  isConnected      Boolean  @default(false) @map("is_connected")
+  lastConnected    DateTime? @map("last_connected")
+  connectionStatus String   @default("disconnected") @map("connection_status")
+  
+  // Exchanges (JSON)
+  exchanges String?
+  
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("zerodha_profiles")
+}
+
+model StrategyTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  strategyType String  @default("supertrend") @map("strategy_type")
+  scriptPath  String?  @map("script_path")
+  isActive    Boolean  @default(true) @map("is_active")
+  version     String   @default("1.0")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  userStrategies UserStrategy[]
+
+  @@map("strategy_templates")
+}
+
+model TradingBasket {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  name        String
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stocks        BasketStock[]
+  userStrategies UserStrategy[]
+
+  @@map("trading_baskets")
+}
+
+model BasketStock {
+  id       String   @id @default(cuid())
+  basketId String   @map("basket_id")
+  symbol   String
+  exchange String   @default("NSE")
+  quantity Int      @default(1)
+  weight   Float    @default(1.0)
+  isActive Boolean  @default(true) @map("is_active")
+  addedAt  DateTime @default(now()) @map("added_at")
+
+  // Relations
+  basket TradingBasket @relation(fields: [basketId], references: [id], onDelete: Cascade)
+
+  @@map("basket_stocks")
+}
+
+model UserStrategy {
+  id String @id @default(cuid())
+  
+  userId     String @map("user_id")
+  basketId   String @map("basket_id")
+  templateId String @map("template_id")
+  
+  // User-specific parameters
+  name String
+  
+  // SuperTrend Parameters
+  supertrendPeriod     Int    @default(10) @map("supertrend_period")
+  supertrendMultiplier Float  @default(3.0) @map("supertrend_multiplier")
+  supertrendAtrPeriod  Int    @default(10) @map("supertrend_atr_period")
+  
+  // Common Parameters
+  timeframe   String @default("1d")
+  signalType  String @default("both") @map("signal_type")
+  
+  // Entry/Exit Conditions
+  entryCondition   String @default("trend_change") @map("entry_condition")
+  exitCondition    String @default("reverse_signal") @map("exit_condition")
+  stopLossPercent  Float  @default(2.0) @map("stop_loss_percent")
+  targetPercent    Float  @default(5.0) @map("target_percent")
+  
+  // Status
+  isActive  Boolean   @default(true) @map("is_active")
+  isRunning Boolean   @default(false) @map("is_running")
+  lastRun   DateTime? @map("last_run")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  basket   TradingBasket     @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  template StrategyTemplate  @relation(fields: [templateId], references: [id])
+  signals  StrategySignal[]
+
+  @@map("user_strategies")
+}
+
+model StrategySignal {
+  id            String   @id @default(cuid())
+  strategyId    String   @map("strategy_id")
+  symbol        String
+  exchange      String   @default("NSE")
+  signalType    String   @map("signal_type") // BUY, SELL, EXIT
+  signalStrength Float   @default(1.0) @map("signal_strength") // 0-1
+  price         Float?
+  quantity      Int?
+  timestamp     DateTime @default(now())
+  isExecuted    Boolean  @default(false) @map("is_executed")
+  executedAt    DateTime? @map("executed_at")
+  notes         String?
+
+  // Relations
+  strategy UserStrategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@map("strategy_signals")
+}
